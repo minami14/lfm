@@ -2,14 +2,12 @@ package lfm
 
 import (
 	"hash/fnv"
-	"sync"
 	"sync/atomic"
 )
 
 type Map struct {
 	pairs  []*atomic.Value
 	length int64
-	sync.Map
 }
 
 func New(size int) *Map {
