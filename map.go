@@ -70,6 +70,27 @@ func (m *Map) Load(key string) (interface{}, bool) {
 	}
 }
 
+func (m *Map) LoadOrStore(key string, value interface{}) (interface{}, bool) {
+	pair := &keyValuePair{
+		key:      key,
+		value:    value,
+		nextPair: new(atomic.Value),
+	}
+	i := m.index(key)
+	current := m.pairs[i]
+	for {
+		if current.CompareAndSwap(nil, pair) {
+			atomic.AddInt64(&m.length, 1)
+			return value, true
+		}
+		p := current.Load().(*keyValuePair)
+		if p.key == key {
+			return p.value, false
+		}
+		current = p.nextPair
+	}
+}
+
 func (m *Map) Delete(key string) bool {
 	i := m.index(key)
 	v := m.pairs[i].Load()
