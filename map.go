@@ -3,6 +3,7 @@ package lfm
 import (
 	"hash/fnv"
 	"sync/atomic"
+	"unsafe"
 )
 
 type Map struct {
@@ -27,6 +28,9 @@ type keyValuePair struct {
 }
 
 func (m *Map) index(key string) int {
+	if len(m.pairs) == 1 {
+		return 0
+	}
 	h := fnv.New64()
 	_, _ = h.Write([]byte(key))
 	return int(h.Sum64()&((1<<63)-1)) % (len(m.pairs) - 1)
@@ -93,36 +97,43 @@ func (m *Map) LoadOrStore(key string, value interface{}) (interface{}, bool) {
 
 func (m *Map) Delete(key string) bool {
 	i := m.index(key)
-	v := m.pairs[i].Load()
+	ov := *(*unsafe.Pointer)(unsafe.Pointer(&m.pairs[i]))
+	pv := m.pairs[i]
+	v := pv.Load()
 	if v == nil {
 		return false
 	}
 	p := v.(*keyValuePair)
 	if p.key == key {
-		if m.pairs[i].CompareAndSwap(p, p.nextPair.Load()) {
+		if atomic.CompareAndSwapPointer((*unsafe.Pointer)(unsafe.Pointer(&m.pairs[i])), ov, unsafe.Pointer(p.nextPair)) {
 			atomic.AddInt64(&m.length, -1)
 			return true
 		}
 		return false
 	}
 
-	pre := m.pairs[i]
-	current := p.nextPair
+	pp := p
 	for {
-		v := current.Load()
-		if v == nil {
-			return false
+		ov := *(*unsafe.Pointer)(unsafe.Pointer(&pp.nextPair))
+		nv := pp.nextPair.Load()
+		var np *keyValuePair
+		var npp unsafe.Pointer
+		if nv != nil {
+			np = nv.(*keyValuePair)
+			npp = unsafe.Pointer(np.nextPair)
 		}
-		p := v.(*keyValuePair)
-		if p.key == key {
-			if pre.CompareAndSwap(current, p.nextPair) {
+		if np.key == key {
+			if atomic.CompareAndSwapPointer((*unsafe.Pointer)(unsafe.Pointer(&pp.nextPair)), ov, npp) {
 				atomic.AddInt64(&m.length, -1)
 				return true
 			}
 			return false
 		}
-		pre = current
-		current = p.nextPair
+		pv := pp.nextPair.Load()
+		if pv == nil {
+			return false
+		}
+		pp = pv.(*keyValuePair)
 	}
 }
 
