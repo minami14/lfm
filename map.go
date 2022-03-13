@@ -118,6 +118,27 @@ func (m *Map) LoadAndStore(key string, value interface{}) interface{} {
 	}
 }
 
+func (m *Map) StoreNotExists(key string, value interface{}) bool {
+	pair := &keyValuePair{
+		key:      key,
+		value:    value,
+		nextPair: new(atomic.Value),
+	}
+	i := m.index(key)
+	current := m.pairs[i]
+	for {
+		if current.CompareAndSwap(nil, pair) {
+			atomic.AddInt64(&m.length, 1)
+			return true
+		}
+		p := current.Load().(*keyValuePair)
+		if p.key == key {
+			return false
+		}
+		current = p.nextPair
+	}
+}
+
 func (m *Map) Delete(key string) bool {
 	i := m.index(key)
 	ov := *(*unsafe.Pointer)(unsafe.Pointer(&m.pairs[i]))
