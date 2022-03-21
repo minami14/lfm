@@ -6,24 +6,24 @@ import (
 	"unsafe"
 )
 
-type Map struct {
+type Map[T any] struct {
 	pairs  []*atomic.Value
 	length int64
 }
 
-func New(size int) *Map {
+func New[T any](size int) *Map[T] {
 	pairs := make([]*atomic.Value, size)
 	for i := range pairs {
 		pairs[i] = new(atomic.Value)
 	}
-	return &Map{
+	return &Map[T]{
 		pairs: pairs,
 	}
 }
 
-type keyValuePair struct {
+type keyValuePair[T any] struct {
 	key      string
-	value    interface{}
+	value    T
 	nextPair *atomic.Value
 }
 
@@ -36,8 +36,8 @@ func (m *Map) index(key string) int {
 	return int(h.Sum64()&((1<<63)-1)) % (len(m.pairs) - 1)
 }
 
-func (m *Map) Store(key string, value interface{}) {
-	pair := &keyValuePair{
+func (m *Map[T]) Store(key string, value T) {
+	pair := &keyValuePair[T]{
 		key:      key,
 		value:    value,
 		nextPair: new(atomic.Value),
@@ -49,7 +49,7 @@ func (m *Map) Store(key string, value interface{}) {
 			atomic.AddInt64(&m.length, 1)
 			return
 		}
-		p := current.Load().(*keyValuePair)
+		p := current.Load().(*keyValuePair[T])
 		if p.key == key {
 			p.value = value
 			return
@@ -58,7 +58,7 @@ func (m *Map) Store(key string, value interface{}) {
 	}
 }
 
-func (m *Map) Load(key string) (interface{}, bool) {
+func (m *Map[T]) Load(key string) (T, bool) {
 	i := m.index(key)
 	current := m.pairs[i]
 	for {
@@ -66,7 +66,7 @@ func (m *Map) Load(key string) (interface{}, bool) {
 		if v == nil {
 			return nil, false
 		}
-		p := v.(*keyValuePair)
+		p := v.(*keyValuePair[T])
 		if p.key == key {
 			return p.value, true
 		}
@@ -74,8 +74,8 @@ func (m *Map) Load(key string) (interface{}, bool) {
 	}
 }
 
-func (m *Map) LoadOrStore(key string, value interface{}) (interface{}, bool) {
-	pair := &keyValuePair{
+func (m *Map[T]) LoadOrStore(key string, value T) (T, bool) {
+	pair := &keyValuePair[T]{
 		key:      key,
 		value:    value,
 		nextPair: new(atomic.Value),
@@ -87,7 +87,7 @@ func (m *Map) LoadOrStore(key string, value interface{}) (interface{}, bool) {
 			atomic.AddInt64(&m.length, 1)
 			return value, true
 		}
-		p := current.Load().(*keyValuePair)
+		p := current.Load().(*keyValuePair[T])
 		if p.key == key {
 			return p.value, false
 		}
@@ -95,8 +95,8 @@ func (m *Map) LoadOrStore(key string, value interface{}) (interface{}, bool) {
 	}
 }
 
-func (m *Map) LoadAndStore(key string, value interface{}) interface{} {
-	pair := &keyValuePair{
+func (m *Map[T]) LoadAndStore(key string, value T) T {
+	pair := &keyValuePair[T]{
 		key:      key,
 		value:    value,
 		nextPair: new(atomic.Value),
@@ -108,7 +108,7 @@ func (m *Map) LoadAndStore(key string, value interface{}) interface{} {
 			atomic.AddInt64(&m.length, 1)
 			return nil
 		}
-		p := current.Load().(*keyValuePair)
+		p := current.Load().(*keyValuePair[T])
 		if p.key == key {
 			old := p.value
 			p.value = value
@@ -118,8 +118,8 @@ func (m *Map) LoadAndStore(key string, value interface{}) interface{} {
 	}
 }
 
-func (m *Map) StoreNotExists(key string, value interface{}) bool {
-	pair := &keyValuePair{
+func (m *Map[T]) StoreNotExists(key string, value T) bool {
+	pair := &keyValuePair[T]{
 		key:      key,
 		value:    value,
 		nextPair: new(atomic.Value),
@@ -131,7 +131,7 @@ func (m *Map) StoreNotExists(key string, value interface{}) bool {
 			atomic.AddInt64(&m.length, 1)
 			return true
 		}
-		p := current.Load().(*keyValuePair)
+		p := current.Load().(*keyValuePair[T])
 		if p.key == key {
 			return false
 		}
@@ -181,14 +181,14 @@ func (m *Map) Delete(key string) bool {
 	}
 }
 
-func (m *Map) Range(f func(key string, value interface{}) bool) {
+func (m *Map[T]) Range(f func(key string, value T) bool) {
 	for _, pair := range m.pairs {
 		current := pair.Load()
 		if current == nil {
 			continue
 		}
 		for {
-			p := current.(*keyValuePair)
+			p := current.(*keyValuePair[T])
 			if !f(p.key, p.value) {
 				return
 			}
