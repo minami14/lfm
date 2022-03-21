@@ -27,7 +27,7 @@ type keyValuePair[T any] struct {
 	nextPair *atomic.Value
 }
 
-func (m *Map) index(key string) int {
+func (m *Map[T]) index(key string) int {
 	if len(m.pairs) == 1 {
 		return 0
 	}
@@ -64,7 +64,8 @@ func (m *Map[T]) Load(key string) (T, bool) {
 	for {
 		v := current.Load()
 		if v == nil {
-			return nil, false
+			var zero T
+			return zero, false
 		}
 		p := v.(*keyValuePair[T])
 		if p.key == key {
@@ -106,7 +107,8 @@ func (m *Map[T]) LoadAndStore(key string, value T) T {
 	for {
 		if current.CompareAndSwap(nil, pair) {
 			atomic.AddInt64(&m.length, 1)
-			return nil
+			var zero T
+			return zero
 		}
 		p := current.Load().(*keyValuePair[T])
 		if p.key == key {
@@ -139,7 +141,7 @@ func (m *Map[T]) StoreNotExists(key string, value T) bool {
 	}
 }
 
-func (m *Map) Delete(key string) bool {
+func (m *Map[T]) Delete(key string) bool {
 	i := m.index(key)
 	ov := *(*unsafe.Pointer)(unsafe.Pointer(&m.pairs[i]))
 	pv := m.pairs[i]
@@ -147,7 +149,7 @@ func (m *Map) Delete(key string) bool {
 	if v == nil {
 		return false
 	}
-	p := v.(*keyValuePair)
+	p := v.(*keyValuePair[T])
 	if p.key == key {
 		if atomic.CompareAndSwapPointer((*unsafe.Pointer)(unsafe.Pointer(&m.pairs[i])), ov, unsafe.Pointer(p.nextPair)) {
 			atomic.AddInt64(&m.length, -1)
@@ -160,10 +162,10 @@ func (m *Map) Delete(key string) bool {
 	for {
 		ov := *(*unsafe.Pointer)(unsafe.Pointer(&pp.nextPair))
 		nv := pp.nextPair.Load()
-		var np *keyValuePair
+		var np *keyValuePair[T]
 		var npp unsafe.Pointer
 		if nv != nil {
-			np = nv.(*keyValuePair)
+			np = nv.(*keyValuePair[T])
 			npp = unsafe.Pointer(np.nextPair)
 		}
 		if np.key == key {
@@ -177,7 +179,7 @@ func (m *Map) Delete(key string) bool {
 		if pv == nil {
 			return false
 		}
-		pp = pv.(*keyValuePair)
+		pp = pv.(*keyValuePair[T])
 	}
 }
 
@@ -200,6 +202,6 @@ func (m *Map[T]) Range(f func(key string, value T) bool) {
 	}
 }
 
-func (m *Map) Length() int {
+func (m *Map[T]) Length() int {
 	return int(m.length)
 }
